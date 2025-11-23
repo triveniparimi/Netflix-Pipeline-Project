@@ -2,9 +2,12 @@ pipeline {
     agent any
 
     environment {
-        DOCKER_IMAGE          = "triveniparimi/netflix-app"
-        DOCKER_CREDENTIALS_ID = "dockerhub-creds"
-        K8S_MANIFEST_PATH     = "k8s"
+        // 🔴 CHANGE THESE 3 VALUES
+        DOCKER_IMAGE = "triveniparimi/netflix-app"
+        DOCKER_USER  = "triveniparimi"
+        DOCKER_PASS  = "Remember2023"
+
+        K8S_MANIFEST_PATH = "k8s"
     }
 
     stages {
@@ -17,7 +20,7 @@ pipeline {
 
         stage('Maven Build') {
             steps {
-                // Windows shell = bat, not sh
+                // Windows shell
                 bat 'mvn clean package -DskipTests'
             }
         }
@@ -25,13 +28,13 @@ pipeline {
         stage('Build Docker Image') {
             steps {
                 script {
+                    // These become environment variables, usable as %IMAGE_TAG%
                     env.IMAGE_TAG    = "${DOCKER_IMAGE}:${BUILD_NUMBER}"
                     env.IMAGE_LATEST = "${DOCKER_IMAGE}:latest"
                 }
 
-                // Use Windows batch script
                 bat """
-                echo Building image %IMAGE_TAG%
+                echo Building %IMAGE_TAG%
                 docker build -t %IMAGE_TAG% .
                 docker tag %IMAGE_TAG% %IMAGE_LATEST%
                 """
@@ -40,30 +43,33 @@ pipeline {
 
         stage('Push Docker Image to Docker Hub') {
             steps {
-                withCredentials([usernamePassword(
-                    credentialsId: "${DOCKER_CREDENTIALS_ID}",
-                    usernameVariable: 'DOCKER_USER',
-                    passwordVariable: 'DOCKER_PASS'
-                )]) {
-                    bat """
-                    echo %DOCKER_PASS% | docker login -u %DOCKER_USER% --password-stdin
-                    docker push %IMAGE_TAG%
-                    docker push %IMAGE_LATEST%
-                    docker logout
-                    """
-                }
+                bat """
+                docker login -u %DOCKER_USER% -p %DOCKER_PASS%
+                docker push %IMAGE_TAG%
+                docker push %IMAGE_LATEST%
+                docker logout
+                """
             }
         }
 
         stage('Deploy to Kubernetes (EKS)') {
             steps {
                 bat """
-                kubectl apply -f k8s/deployment.yml
-                kubectl apply -f k8s/service.yml
+                kubectl apply -f %K8S_MANIFEST_PATH%/deployment.yml
+                kubectl apply -f %K8S_MANIFEST_PATH%/service.yml
                 kubectl get deploy
                 kubectl get svc
                 """
             }
+        }
+    }
+
+    post {
+        success {
+            echo "✅ Pipeline completed: built, pushed and deployed ${DOCKER_IMAGE}"
+        }
+        failure {
+            echo "❌ Pipeline failed – check the stage logs above."
         }
     }
 }
