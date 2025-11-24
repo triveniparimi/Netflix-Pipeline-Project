@@ -1,12 +1,14 @@
 pipeline {
     agent any
 
+    tools {
+        maven 'maven'
+    }
+
     environment {
-        // CHANGE THESE 3 VALUES
         DOCKER_IMAGE = "triveniparimi/netflix-app"
         DOCKER_USER  = "triveniparimi"
-        DOCKER_PASS  = "Remember2023*"
-
+        DOCKER_PASS  = "Remember2023"
         K8S_MANIFEST_PATH = "k8s"
     }
 
@@ -20,31 +22,27 @@ pipeline {
 
         stage('Build with Maven') {
             steps {
-                sh 'mvn clean package -DskipTests'
+                bat "mvn clean package -DskipTests"
             }
         }
 
         stage('Build Docker Image') {
             steps {
-                sh """
-                    docker build -t ${DOCKER_IMAGE}:${BUILD_NUMBER} .
-                    docker tag ${DOCKER_IMAGE}:${BUILD_NUMBER} ${DOCKER_IMAGE}:latest
-                """
+                bat "docker build -t %DOCKER_IMAGE% ."
             }
         }
 
         stage('Push Docker Image to Docker Hub') {
             steps {
-                withCredentials([usernamePassword(credentialsId: 'dockerhub-creds',
-                        usernameVariable: 'DOCKER_USER',
-                        passwordVariable: 'DOCKER_PASS')]) {
-                    sh """
-                        echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin
-                        docker push ${DOCKER_IMAGE}:${BUILD_NUMBER}
-                        docker push ${DOCKER_IMAGE}:latest
-                        docker logout
-                    """
-                }
+                bat "docker login -u %DOCKER_USER% -p %DOCKER_PASS%"
+                bat "docker push %DOCKER_IMAGE%"
+            }
+        }
+
+        stage('Deploy to Kubernetes') {
+            steps {
+                bat "kubectl apply -f k8s\\deployment.yml"
+                bat "kubectl apply -f k8s\\service.yml"
             }
         }
     }
